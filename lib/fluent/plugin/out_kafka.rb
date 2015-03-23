@@ -1,4 +1,5 @@
-class Fluent::KafkaOutput < Fluent::Output
+# encode: utf-8
+class Fluent::KafkaOutput < Fluent::BufferedOutput
   Fluent::Plugin.register_output('kafka', self)
 
   def initialize
@@ -14,6 +15,7 @@ class Fluent::KafkaOutput < Fluent::Output
   config_param :output_data_type, :string, :default => 'json'
   config_param :output_include_tag, :bool, :default => false
   config_param :output_include_time, :bool, :default => false
+  config_param :kafka_agg_max_bytes, :size, :default => 4*1024  #4k
 
   # poseidon producer options
   config_param :max_send_retries, :integer, :default => 3
@@ -22,6 +24,10 @@ class Fluent::KafkaOutput < Fluent::Output
 
   attr_accessor :output_data_type
   attr_accessor :field_separator
+
+  unless method_defined?(:log)
+    define_method("log") { $log }
+  end
 
   @seed_brokers = []
 
@@ -56,6 +62,7 @@ class Fluent::KafkaOutput < Fluent::Output
       @seed_brokers = @brokers.match(",").nil? ? [@brokers] : @brokers.split(",")
       log.info "brokers has been set directly: #{@seed_brokers}"
     end
+
     case @output_data_type
     when 'json'
       require 'yajl'
@@ -83,7 +90,6 @@ class Fluent::KafkaOutput < Fluent::Output
                          else
                            nil
                          end
-
   end
 
   def start
@@ -93,6 +99,10 @@ class Fluent::KafkaOutput < Fluent::Output
 
   def shutdown
     super
+  end
+
+  def format(tag, time, record)
+    [tag, time, record].to_msgpack
   end
 
   def parse_record(record)
@@ -116,22 +126,42 @@ class Fluent::KafkaOutput < Fluent::Output
     end
   end
 
-  def emit(tag, es, chain)
+  def write(chunk)
+    records_by_topic = {}
+    bytes_by_topic = {}
+    messages = []
+    messages_bytes = 0
     begin
-      chain.next
-      es.each do |time,record|
+      chunk.msgpack_each { |tag, time, record|
         record['time'] = time if @output_include_time
         record['tag'] = tag if @output_include_tag
-        topic = record['topic'] || self.default_topic || tag
-        partition = record['partition'] || self.default_partition
-        message = Poseidon::MessageToSend.new(topic, parse_record(record))
-        @producer.send_messages([message])
-      end
-    rescue Exception => e
-      log.warn("Send exception occurred: #{e}")
-      refresh_producer()
-      raise e
-    end
-  end
+        topic = record['topic'] || @default_topic || tag
 
+        records_by_topic[topic] ||= 0
+        bytes_by_topic[topic] ||= 0
+
+        record_buf = parse_record(record)
+        record_buf_bytes = record_buf.bytesize
+        if messages.length > 0 and messages_bytes + record_buf_bytes > @kafka_agg_max_bytes
+          @producer.send_messages(messages)
+          messages = []
+          messages_bytes = 0
+        end
+        messages << Poseidon::MessageToSend.new(topic, record_buf)
+        messages_bytes += record_buf_bytes
+
+        records_by_topic[topic] += 1
+        bytes_by_topic[topic] += record_buf_bytes
+      }
+      if messages.length > 0
+        @producer.send_messages(messages)
+      end
+      log.debug "(records|bytes) (#{records_by_topic}|#{bytes_by_topic})"
+    end
+  rescue Exception => e
+    log.warn "Send exception occurred: #{e}"
+    refresh_producer()
+    # Raise exception to retry sendind messages
+    raise e
+  end
 end
