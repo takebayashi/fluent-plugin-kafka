@@ -31,7 +31,7 @@ Or install it yourself as:
       add_suffix <tag suffix (Optional)>
     </source>
 
-### Output plugin (non-buffered)
+### Buffered output plugin
 
     <match *.**>
       type                kafka
@@ -41,37 +41,8 @@ Or install it yourself as:
       zookeeper           <zookeeper_host>:<zookeeper_port> # Set brokers via Zookeeper
 
       default_topic       <output topic>
-      output_data_type    (json|ltsv|msgpack|attr:<record name>)
-      output_include_tag  (true|false) :default => false
-      output_include_time (true|false) :default => false
-      max_send_retries    (integer)    :default => 3
-      required_acks       (integer)    :default => 0
-      ack_timeout_ms      (integer)    :default => 1500
-    </match>
-
-Supports following Poseidon::Producer options.
-
-- max_send_retries — default: 3 — Number of times to retry sending of messages to a leader.
-- required_acks — default: 0 — The number of acks required per request.
-- ack_timeout_ms — default: 1500 — How long the producer waits for acks.
-
-See also [Poseidon::Producer](http://www.rubydoc.info/github/bpot/poseidon/Poseidon/Producer) for more detailed documentation about Poseidon.
-
-### Buffered output plugin
-
-    <match *.**>
-      type                kafka_buffered
-
-      # Brokers: you can choose either brokers or zookeeper.
-      brokers             <broker1_host>:<broker1_port>,<broker2_host>:<broker2_port>,.. # Set brokers directly
-      zookeeper           <zookeeper_host>:<zookeeper_port> # Set brokers via Zookeeper
-
-      default_topic       <output topic>
       flush_interval      <flush interval (sec) :default => 60>
       buffer_type         (file|memory)
-      output_data_type    (json|ltsv|msgpack|attr:<record name>)
-      output_include_tag  (true|false) :default => false
-      output_include_time (true|false) :default => false
       max_send_retries    (integer)    :default => 3
       required_acks       (integer)    :default => 0
       ack_timeout_ms      (integer)    :default => 1500
