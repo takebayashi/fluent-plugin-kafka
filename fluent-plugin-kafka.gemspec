@@ -15,7 +15,6 @@ Gem::Specification.new do |gem|
   gem.version = '0.0.10'
   gem.add_dependency 'fluentd'
   gem.add_dependency 'poseidon'
-  gem.add_dependency 'ltsv'
   gem.add_dependency 'yajl-ruby'
   gem.add_dependency 'msgpack'
   gem.add_dependency 'zookeeper'
