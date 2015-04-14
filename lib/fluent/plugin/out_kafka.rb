@@ -60,14 +60,7 @@ class Fluent::KafkaOutput < Fluent::Output
     if @compression_codec == 'snappy'
       require 'snappy'
     end
-    case @output_data_type
-    when 'json'
-      require 'yajl'
-    when 'ltsv'
-      require 'ltsv'
-    when 'msgpack'
-      require 'msgpack'
-    end
+    require 'msgpack'
 
     @f_separator = case @field_separator
                    when /SPACE/i then ' '
@@ -76,13 +69,7 @@ class Fluent::KafkaOutput < Fluent::Output
                    else "\t"
                    end
 
-    @custom_attributes = if @output_data_type == 'json'
-                           nil
-                         elsif @output_data_type == 'ltsv'
-                           nil
-                         elsif @output_data_type == 'msgpack'
-                           nil
-                         elsif @output_data_type =~ /^attr:(.*)$/
+    @custom_attributes = if @output_data_type =~ /^attr:(.*)$/
                            $1.split(',').map(&:strip).reject(&:empty?)
                          else
                            @formatter = Fluent::Plugin.new_formatter(@output_data_type)
@@ -101,18 +88,9 @@ class Fluent::KafkaOutput < Fluent::Output
     super
   end
 
-  def parse_record(record)
+  def parse_record(tag, time, record)
     if @custom_attributes.nil?
-      case @output_data_type
-      when 'json'
-        Yajl::Encoder.encode(record)
-      when 'ltsv'
-        LTSV.dump(record)
-      when 'msgpack'
-        record.to_msgpack
-      else
-        record.to_s
-      end
+      @formatter.format(tag, time, record)
     else
       @custom_attributes.unshift('time') if @output_include_time
       @custom_attributes.unshift('tag') if @output_include_tag
@@ -130,7 +108,7 @@ class Fluent::KafkaOutput < Fluent::Output
         record['tag'] = tag if @output_include_tag
         topic = record['topic'] || self.default_topic || tag
         partition = record['partition'] || self.default_partition
-        value = @formatter.nil? ? parse_record(record) : @formatter.format(tag, time, record)
+        value = parse_record(tag, time, record)
         message = Poseidon::MessageToSend.new(topic, value)
         @producer.send_messages([message])
       end

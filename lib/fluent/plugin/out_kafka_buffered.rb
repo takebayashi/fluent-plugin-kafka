@@ -66,14 +66,7 @@ class Fluent::KafkaOutputBuffered < Fluent::BufferedOutput
     if @compression_codec == 'snappy'
       require 'snappy'
     end
-    case @output_data_type
-    when 'json'
-      require 'yajl'
-    when 'ltsv'
-      require 'ltsv'
-    when 'msgpack'
-      require 'msgpack'
-    end
+    require 'msgpack'
 
     @f_separator = case @field_separator
                    when /SPACE/i then ' '
@@ -82,13 +75,7 @@ class Fluent::KafkaOutputBuffered < Fluent::BufferedOutput
                    else "\t"
                    end
 
-    @custom_attributes = if @output_data_type == 'json'
-                           nil
-                         elsif @output_data_type == 'ltsv'
-                           nil
-                         elsif @output_data_type == 'msgpack'
-                           nil
-                         elsif @output_data_type =~ /^attr:(.*)$/
+    @custom_attributes = if @output_data_type =~ /^attr:(.*)$/
                            $1.split(',').map(&:strip).reject(&:empty?)
                          else
                            @formatter = Fluent::Plugin.new_formatter(@output_data_type)
@@ -110,18 +97,9 @@ class Fluent::KafkaOutputBuffered < Fluent::BufferedOutput
     [tag, time, record].to_msgpack
   end
 
-  def parse_record(record)
+  def parse_record(tag, time, record)
     if @custom_attributes.nil?
-      case @output_data_type
-      when 'json'
-        Yajl::Encoder.encode(record)
-      when 'ltsv'
-        LTSV.dump(record)
-      when 'msgpack'
-        record.to_msgpack
-      else
-        record.to_s
-      end
+      @formatter.format(tag, time, record)
     else
       @custom_attributes.unshift('time') if @output_include_time
       @custom_attributes.unshift('tag') if @output_include_tag
@@ -145,7 +123,7 @@ class Fluent::KafkaOutputBuffered < Fluent::BufferedOutput
         records_by_topic[topic] ||= 0
         bytes_by_topic[topic] ||= 0
 
-        record_buf = @formatter.nil? ? parse_record(record) : @formatter.format(tag, time, record)
+        record_buf = parse_record(tag, time, record)
         record_buf_bytes = record_buf.bytesize
         if messages.length > 0 and messages_bytes + record_buf_bytes > @kafka_agg_max_bytes
           @producer.send_messages(messages)
